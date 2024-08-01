@@ -1,0 +1,59 @@
+import pandas as pd
+import numpy as np
+from collections import Counter
+from scipy.stats import chi2_contingency
+
+# Datos de ejemplo
+data = {
+    "Raza": ["Raza1"]*10 + ["Raza2"]*10 + ["Raza3"]*10,
+    "Animal": list(range(1, 11)) * 3,
+    "Genotipo": ["A1A1", "A1A2", "A2A2", "A1A2", "A1A1", "A1A2", "A2A2", "A1A1", "A1A2", "A2A2"] * 3
+}
+
+df = pd.DataFrame(data)
+
+# Frecuencias genotípicas por raza
+genotype_counts = df.groupby(['Raza', 'Genotipo']).size().unstack(fill_value=0)
+
+# Frecuencias alélicas por raza
+allele_counts = genotype_counts.copy()
+allele_counts['A1'] = 2 * allele_counts['A1A1'] + allele_counts['A1A2']
+allele_counts['A2'] = 2 * allele_counts['A2A2'] + allele_counts['A1A2']
+allele_counts = allele_counts[['A1', 'A2']]
+allele_freqs = allele_counts.div(allele_counts.sum(axis=1), axis=0)
+
+# Heterocigosis observada y esperada
+ho = genotype_counts['A1A2'] / genotype_counts.sum(axis=1)
+he = 2 * allele_freqs['A1'] * allele_freqs['A2']
+
+# Equilibrio Hardy-Weinberg
+def hwe_test(row):
+    p = row['A1']
+    q = row['A2']
+    n = row['A1A1'] + row['A1A2'] + row['A2A2']
+    expected = [n * p**2, 2 * n * p * q, n * q**2]
+    observed = [row['A1A1'], row['A1A2'], row['A2A2']]
+    chi2, p_val = chi2_contingency([observed, expected])[:2]
+    return pd.Series([chi2, p_val])
+
+hwe_results = genotype_counts.apply(hwe_test, axis=1)
+hwe_results.columns = ['Chi2', 'P-value']
+
+# Índices Fis, Fit, Fst
+Fis = (he - ho) / he
+# For Fit and Fst, we would need a more complex hierarchical model (e.g., AMOVA) 
+
+# Índice de diversidad de Shannon
+def shannon_index(row):
+    freqs = row / row.sum()
+    return -np.sum(freqs * np.log2(freqs + 1e-9))  # adding a small value to avoid log(0)
+
+diversity_index = genotype_counts.apply(shannon_index, axis=1)
+
+# Mostrar resultados
+results = pd.concat([allele_freqs, ho, he, hwe_results, Fis, diversity_index], axis=1)
+results.columns = ['Freq A1', 'Freq A2', 'Ho', 'He', 'HWE Chi2', 'HWE P-value', 'Fis', 'Shannon Index']
+
+import ace_tools as tools; tools.display_dataframe_to_user(name="Analysis Results", dataframe=results)
+
+results
