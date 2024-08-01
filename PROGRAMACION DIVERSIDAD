@@ -17,31 +17,31 @@ genotype_counts = df.groupby(['Raza', 'Genotipo']).size().unstack(fill_value=0)
 
 # Frecuencias alélicas por raza
 allele_counts = genotype_counts.copy()
-allele_counts['A1'] = 2 * allele_counts['A1A1'] + allele_counts['A1A2']
-allele_counts['A2'] = 2 * allele_counts['A2A2'] + allele_counts['A1A2']
+allele_counts['A1'] = 2 * allele_counts.get('A1A1', 0) + allele_counts.get('A1A2', 0)
+allele_counts['A2'] = 2 * allele_counts.get('A2A2', 0) + allele_counts.get('A1A2', 0)
 allele_counts = allele_counts[['A1', 'A2']]
 allele_freqs = allele_counts.div(allele_counts.sum(axis=1), axis=0)
 
 # Heterocigosis observada y esperada
-ho = genotype_counts['A1A2'] / genotype_counts.sum(axis=1)
+ho = genotype_counts.get('A1A2', 0) / genotype_counts.sum(axis=1)
 he = 2 * allele_freqs['A1'] * allele_freqs['A2']
 
 # Equilibrio Hardy-Weinberg
-def hwe_test(row):
+def hwe_test(row, genotype_counts):
     p = row['A1']
     q = row['A2']
-    n = row['A1A1'] + row['A1A2'] + row['A2A2']
-    expected = [n * p**2, 2 * n * p * q, n * q**2]
-    observed = [row['A1A1'], row['A1A2'], row['A2A2']]
-    chi2, p_val = chi2_contingency([observed, expected])[:2]
+    observed_counts = genotype_counts.loc[row.name]
+    n = observed_counts.sum()
+    expected_counts = [n * p**2, 2 * n * p * q, n * q**2]
+    observed_counts = observed_counts.values
+    chi2, p_val = chi2_contingency([observed_counts, expected_counts])[:2]
     return pd.Series([chi2, p_val])
 
-hwe_results = genotype_counts.apply(hwe_test, axis=1)
+hwe_results = allele_freqs.apply(hwe_test, axis=1, genotype_counts=genotype_counts)
 hwe_results.columns = ['Chi2', 'P-value']
 
-# Índices Fis, Fit, Fst
+# Índices Fis
 Fis = (he - ho) / he
-# For Fit and Fst, we would need a more complex hierarchical model (e.g., AMOVA) 
 
 # Índice de diversidad de Shannon
 def shannon_index(row):
